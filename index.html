@@ -2,51 +2,71 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport"
+      content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <title>⚾ 401 World Series – Blue Jays Stadium</title>
 <style>
-  body{
+  html,body{
     margin:0;
-    background:radial-gradient(circle at center,#0c2b14,#041e0e 85%);
-    font-family:'Poppins',sans-serif;color:#f5f5f5;
-    display:flex;justify-content:center;align-items:center;
-    height:100vh;overflow:hidden;
+    padding:0;
+    height:100%;
+    overflow:hidden;
+    background:#0b2413;
+    font-family:'Poppins',sans-serif;
+    color:#f5f5f5;
   }
   #banner{
-    position:absolute;top:0;left:0;right:0;
-    background:#004ba0;color:#fff;text-align:center;
-    font-weight:700;font-size:1.3rem;letter-spacing:1px;
-    padding:8px 0;text-shadow:0 0 6px #00c8ff;
-    box-shadow:0 2px 10px rgba(0,0,0,0.5);
+    position:fixed;top:0;left:0;right:0;
+    background:#004ba0;color:#fff;
+    text-align:center;font-weight:700;
+    font-size:clamp(1rem,2.5vw,1.3rem);
+    letter-spacing:1px;padding:8px 0;
+    text-shadow:0 0 6px #00c8ff;
+    box-shadow:0 2px 10px rgba(0,0,0,.5);
+    z-index:10;
   }
   #gameContainer{
-    width:min(95vw,900px);aspect-ratio:16/9;
+    width:100vw;
+    height:100vh;
+    max-width:900px;
+    margin:auto;
     position:relative;
-    background:linear-gradient(to bottom,#062a12 30%,#0a3d1b 70%);
-    border-radius:16px;
-    box-shadow:0 10px 40px rgba(0,0,0,.8);
-    overflow:hidden;
+    display:flex;
+    justify-content:center;
+    align-items:center;
   }
-  canvas{width:100%;height:100%;display:block;}
+  canvas{
+    width:100%;
+    height:100%;
+    touch-action:none;
+    display:block;
+  }
   .hud{
-    position:absolute;top:40px;left:8px;right:8px;
+    position:absolute;top:60px;left:8px;right:8px;
     display:flex;justify-content:space-between;align-items:center;
     font-weight:600;pointer-events:none;
+    font-size:clamp(12px,2.5vw,18px);
   }
   .btn{
-    pointer-events:auto;background:rgba(255,255,255,0.1);
-    padding:6px 12px;border-radius:8px;
-    border:1px solid rgba(255,255,255,0.2);cursor:pointer;
+    pointer-events:auto;
+    background:rgba(255,255,255,0.1);
+    padding:.6em 1em;border-radius:12px;
+    border:1px solid rgba(255,255,255,0.2);
+    cursor:pointer;
+    font-size:clamp(14px,3vw,18px);
   }
   .centerOverlay{
     position:absolute;inset:0;
     display:none;place-items:center;text-align:center;
     background:rgba(0,0,0,0.6);
+    z-index:5;
   }
   .centerOverlay.active{display:grid;}
   .card{
     background:rgba(10,30,20,0.9);
-    padding:20px 30px;border-radius:12px;max-width:400px;
+    padding:20px 30px;border-radius:12px;
+    width:90%;max-width:400px;
+    box-sizing:border-box;
   }
   h1{margin:0 0 10px;}
   .accent{color:#00ff9c;}
@@ -92,11 +112,18 @@
   const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
   const wrap=document.getElementById("gameContainer");
   let width,height;
-  function resize(){width=wrap.clientWidth;height=wrap.clientHeight;
-    canvas.width=width;canvas.height=height;}
-  window.addEventListener("resize",resize);resize();
+  function resize(){
+    width=window.innerWidth;
+    height=window.innerHeight;
+    canvas.width=width;
+    canvas.height=height;
+    bat.x=width*0.25;
+    bat.y=height/2;
+  }
+  window.addEventListener("resize",resize);
+  resize();
 
-  // UI refs
+  // HUD refs
   const scoreEl=document.getElementById("score"),roundsEl=document.getElementById("rounds"),
         missesEl=document.getElementById("misses"),timeEl=document.getElementById("time"),
         finalScoreEl=document.getElementById("finalScore"),overlayStart=document.getElementById("overlayStart"),
@@ -162,13 +189,16 @@
     if(e.key.toLowerCase()==="p")togglePause();
   });
   wrap.addEventListener("pointerdown",swing);
+  wrap.addEventListener("touchstart",e=>{
+    e.preventDefault();swing();
+  },{passive:false});
 
   function swing(){
     if(!running||paused)return;
     bat.swing=true;setTimeout(()=>bat.swing=false,150);
     if(ball&&!ball.hit){
       const zoneX=bat.x+bat.w;
-      if(ball.x<zoneX+25&&ball.x>zoneX-25){
+      if(ball.x<zoneX+40&&ball.x>zoneX-40){
         score+=100;ball.hit=true;ball.vx=400+Math.random()*200;ball.vy=-150-Math.random()*150;
         playSound("hit");playSound("cheer");flashAlpha=0.4;shake=8;
       }else playSound("miss");
@@ -179,14 +209,12 @@
     missesEl.textContent=misses;timeEl.textContent=(timeLeft/1000).toFixed(1);}
 
   function drawStadiumBackground(){
-    // animated crowd silhouettes
     const crowdHeight=height*0.25;
     ctx.fillStyle="#03160b";
     for(let i=0;i<width;i+=20){
       const h=Math.sin((i+Date.now()/100)/30)*5+Math.random()*5+crowdHeight;
       ctx.fillRect(i,height-h,20,h);
     }
-    // stadium lights
     lightPulse=Math.sin(Date.now()/500)*0.5+0.5;
     const grad=ctx.createRadialGradient(width/2,0,width*0.1,width/2,0,width*0.9);
     grad.addColorStop(0,`rgba(255,255,200,${0.2+0.2*lightPulse})`);
@@ -255,34 +283,22 @@
   document.getElementById("startBtn").onclick=startGame;
   document.getElementById("restartBtn").onclick=startGame;
 
-  // Submit Score to Google Sheet
- submitBtn.onclick = () => {
-  const name = playerName.value.trim();
-  if (!name) {
-    submitMsg.textContent = "Please enter your name first.";
-    return;
-  }
-  submitMsg.textContent = "Submitting ...";
-
-  const payload = { Name: name, Score: bestRoundScore };
-
-  fetch("https://script.google.com/macros/s/AKfycbzwuP6MUoc1dFq4U6Ge6IYv9t3mD1Z3MBrs36pNak6Qr0DLwZ1MQOuXt59cvj8LdqEtXw/exec", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  })
-    .then(r => r.json())
-    .then(res => {
-      if (res.ok) {
-        submitMsg.textContent = "✅ Score submitted!";
-      } else {
-        submitMsg.textContent = "⚠️ Submission error.";
-      }
+  // Submit Score placeholder
+  submitBtn.onclick=()=>{
+    const name=playerName.value.trim();
+    if(!name){submitMsg.textContent="Please enter your name first.";return;}
+    submitMsg.textContent="Submitting ...";
+    const data={Name:name,Score:bestRoundScore,Date:new Date().toLocaleString()};
+    fetch("YOUR_GOOGLE_SCRIPT_WEBAPP_URL_HERE",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(data)
     })
-    .catch(() => (submitMsg.textContent = "⚠️ Network error."));
-};
+      .then(r=>r.json())
+      .then(()=>submitMsg.textContent="✅ Score submitted successfully!")
+      .catch(()=>submitMsg.textContent="⚠️ Network error.");
+  };
 })();
 </script>
 </body>
 </html>
-
