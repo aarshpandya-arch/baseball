@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚾ 401 World Series – Blue Jays Stadium</title>
+<style>
+  body{
+    margin:0;
+    background:radial-gradient(circle at center,#0c2b14,#041e0e 85%);
+    font-family:'Poppins',sans-serif;color:#f5f5f5;
+    display:flex;justify-content:center;align-items:center;
+    height:100vh;overflow:hidden;
+  }
+  #banner{
+    position:absolute;top:0;left:0;right:0;
+    background:#004ba0;color:#fff;text-align:center;
+    font-weight:700;font-size:1.3rem;letter-spacing:1px;
+    padding:8px 0;text-shadow:0 0 6px #00c8ff;
+    box-shadow:0 2px 10px rgba(0,0,0,0.5);
+  }
+  #gameContainer{
+    width:min(95vw,900px);aspect-ratio:16/9;
+    position:relative;
+    background:linear-gradient(to bottom,#062a12 30%,#0a3d1b 70%);
+    border-radius:16px;
+    box-shadow:0 10px 40px rgba(0,0,0,.8);
+    overflow:hidden;
+  }
+  canvas{width:100%;height:100%;display:block;}
+  .hud{
+    position:absolute;top:40px;left:8px;right:8px;
+    display:flex;justify-content:space-between;align-items:center;
+    font-weight:600;pointer-events:none;
+  }
+  .btn{
+    pointer-events:auto;background:rgba(255,255,255,0.1);
+    padding:6px 12px;border-radius:8px;
+    border:1px solid rgba(255,255,255,0.2);cursor:pointer;
+  }
+  .centerOverlay{
+    position:absolute;inset:0;
+    display:none;place-items:center;text-align:center;
+    background:rgba(0,0,0,0.6);
+  }
+  .centerOverlay.active{display:grid;}
+  .card{
+    background:rgba(10,30,20,0.9);
+    padding:20px 30px;border-radius:12px;max-width:400px;
+  }
+  h1{margin:0 0 10px;}
+  .accent{color:#00ff9c;}
+  input{padding:8px;width:80%;border-radius:8px;border:none;margin:8px 0;}
+</style>
+</head>
+<body>
+<div id="banner">Let's Go Blue Jays! 🧢⚾</div>
+
+<div id="gameContainer">
+  <canvas id="game"></canvas>
+  <div class="hud">
+    <div>🏏 Score: <span id="score" class="accent">0</span></div>
+    <div>❤️ Rounds Left: <span id="rounds" class="accent">3</span></div>
+    <div>❌ Misses: <span id="misses" class="accent">0</span></div>
+    <div>⏱️ Time: <span id="time" class="accent">60.0</span>s</div>
+    <button class="btn" id="pauseBtn">Pause</button>
+  </div>
+
+  <div class="centerOverlay active" id="overlayStart">
+    <div class="card">
+      <h1>⚾ 401 World Series</h1>
+      <p>Tap / Click / Spacebar to swing your bat toward the pitcher.</p>
+      <p>Each round = 1 minute or 3 misses. Final score = your <b>best round</b>.</p>
+      <button class="btn" id="startBtn">Play Ball</button>
+    </div>
+  </div>
+
+  <div class="centerOverlay" id="overlayEnd">
+    <div class="card">
+      <h1>🏆 Game Over</h1>
+      <p>Best Round Score: <span id="finalScore" class="accent">0</span></p>
+      <input id="playerName" type="text" placeholder="Enter Your Name">
+      <button class="btn" id="submitBtn">Submit Score</button><br>
+      <button class="btn" id="restartBtn">Play Again</button>
+      <p id="submitMsg" style="font-size:13px;color:#00ff9c;"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+  const wrap=document.getElementById("gameContainer");
+  let width,height;
+  function resize(){width=wrap.clientWidth;height=wrap.clientHeight;
+    canvas.width=width;canvas.height=height;}
+  window.addEventListener("resize",resize);resize();
+
+  // UI refs
+  const scoreEl=document.getElementById("score"),roundsEl=document.getElementById("rounds"),
+        missesEl=document.getElementById("misses"),timeEl=document.getElementById("time"),
+        finalScoreEl=document.getElementById("finalScore"),overlayStart=document.getElementById("overlayStart"),
+        overlayEnd=document.getElementById("overlayEnd"),pauseBtn=document.getElementById("pauseBtn"),
+        playerName=document.getElementById("playerName"),submitBtn=document.getElementById("submitBtn"),
+        submitMsg=document.getElementById("submitMsg");
+
+  // Game state
+  let running=false,paused=false;
+  let score=0,bestRoundScore=0,rounds=3,misses=0;
+  let timeLeft=60000,ball=null,baseSpeed=600;
+  let bat={x:width*0.25,y:height/2,w:10,h:120,swing:false};
+  let flashAlpha=0,shake=0,lightPulse=0;
+  let lastFrame=performance.now();
+
+  // Sound
+  const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  function playSound(type){
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    if(type==="hit"){o.frequency.value=900;g.gain.value=0.3;}
+    if(type==="miss"){o.frequency.value=160;g.gain.value=0.25;}
+    if(type==="cheer"){o.frequency.value=440;g.gain.value=0.1;}
+    o.connect(g);g.connect(audioCtx.destination);
+    o.type="square";o.start();o.stop(audioCtx.currentTime+0.15);
+    if(type==="cheer"){setTimeout(()=>playSound("hit"),100);}
+  }
+
+  function spawnBall(){const y=height/2+(Math.random()-0.5)*100;
+    ball={x:width-20,y:y,vx:-baseSpeed,vy:0,hit:false};}
+
+  function startGame(){
+    overlayStart.classList.remove("active");overlayEnd.classList.remove("active");
+    score=0;bestRoundScore=0;rounds=3;misses=0;startRound();
+  }
+
+  function startRound(){
+    running=true;paused=false;timeLeft=60000;baseSpeed=600;misses=0;
+    ball=null;spawnBall();lastFrame=performance.now();loop(performance.now());
+  }
+
+  function endRound(){
+    if(score>bestRoundScore)bestRoundScore=score;
+    rounds--;
+    if(rounds>0){score=0;misses=0;spawnBall();startRound();}
+    else endGame();
+  }
+
+  function endGame(){
+    running=false;
+    overlayEnd.classList.add("active");
+    finalScoreEl.textContent=bestRoundScore;
+  }
+
+  function togglePause(){
+    if(!running)return;
+    paused=!paused;pauseBtn.textContent=paused?"Resume":"Pause";
+    if(!paused){lastFrame=performance.now();loop(performance.now());}
+  }
+  pauseBtn.onclick=togglePause;
+
+  window.addEventListener("keydown",e=>{
+    if(e.code==="Space")swing();
+    if(e.key.toLowerCase()==="p")togglePause();
+  });
+  wrap.addEventListener("pointerdown",swing);
+
+  function swing(){
+    if(!running||paused)return;
+    bat.swing=true;setTimeout(()=>bat.swing=false,150);
+    if(ball&&!ball.hit){
+      const zoneX=bat.x+bat.w;
+      if(ball.x<zoneX+25&&ball.x>zoneX-25){
+        score+=100;ball.hit=true;ball.vx=400+Math.random()*200;ball.vy=-150-Math.random()*150;
+        playSound("hit");playSound("cheer");flashAlpha=0.4;shake=8;
+      }else playSound("miss");
+    }
+  }
+
+  function updateHUD(){scoreEl.textContent=score;roundsEl.textContent=rounds;
+    missesEl.textContent=misses;timeEl.textContent=(timeLeft/1000).toFixed(1);}
+
+  function drawStadiumBackground(){
+    // animated crowd silhouettes
+    const crowdHeight=height*0.25;
+    ctx.fillStyle="#03160b";
+    for(let i=0;i<width;i+=20){
+      const h=Math.sin((i+Date.now()/100)/30)*5+Math.random()*5+crowdHeight;
+      ctx.fillRect(i,height-h,20,h);
+    }
+    // stadium lights
+    lightPulse=Math.sin(Date.now()/500)*0.5+0.5;
+    const grad=ctx.createRadialGradient(width/2,0,width*0.1,width/2,0,width*0.9);
+    grad.addColorStop(0,`rgba(255,255,200,${0.2+0.2*lightPulse})`);
+    grad.addColorStop(1,"transparent");
+    ctx.fillStyle=grad;
+    ctx.fillRect(0,0,width,height);
+  }
+
+  function drawField(){
+    ctx.fillStyle="#0d4e25";ctx.fillRect(0,0,width,height);
+    ctx.fillStyle="#0b3d1b";for(let i=0;i<width;i+=40)ctx.fillRect(i,0,20,height);
+    ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.strokeRect(bat.x+50,height/2-40,20,80);
+  }
+
+  function drawBat(){
+    ctx.save();ctx.translate(bat.x,bat.y);
+    const ang=bat.swing?-Math.PI/6:0;ctx.rotate(ang);
+    ctx.fillStyle="#c09048";ctx.fillRect(-bat.w,-bat.h/2,bat.w,bat.h);
+    ctx.beginPath();ctx.arc(-bat.w,bat.h/2,8,0,Math.PI*2);
+    ctx.fillStyle="#8c5f2a";ctx.fill();ctx.restore();
+  }
+
+  function drawBall(){
+    if(!ball)return;
+    ctx.beginPath();ctx.arc(ball.x,ball.y,10,0,Math.PI*2);
+    ctx.fillStyle="#fff";ctx.fill();
+    ctx.strokeStyle="#d33";ctx.beginPath();
+    ctx.arc(ball.x,ball.y,8,-0.5,0.5);ctx.stroke();
+    ctx.beginPath();ctx.arc(ball.x,ball.y,8,Math.PI-0.5,Math.PI+0.5);ctx.stroke();
+  }
+
+  function drawFlashAndShake(){
+    if(flashAlpha>0){ctx.fillStyle=`rgba(255,255,255,${flashAlpha})`;ctx.fillRect(0,0,width,height);
+      flashAlpha-=0.03;}
+    if(shake>0){
+      const dx=(Math.random()-0.5)*shake,dy=(Math.random()-0.5)*shake;
+      ctx.translate(dx,dy);shake*=0.9;
+    }
+  }
+
+  function loop(ts){
+    if(!running)return;if(paused)return;
+    const dt=ts-lastFrame;lastFrame=ts;
+    timeLeft-=dt;if(timeLeft<=0){endRound();return;}
+    baseSpeed=600+300*(1-(timeLeft/60000));
+
+    if(ball){
+      ball.x+=ball.vx*dt/1000;ball.y+=ball.vy*dt/1000;
+      if(ball.hit)ball.vy+=400*dt/1000;
+      if(!ball.hit&&ball.x<0){misses++;if(misses>=3){endRound();return;}ball=null;spawnBall();}
+      if(ball.hit&&(ball.x>width+30||ball.y>height+50)){ball=null;spawnBall();}
+    } else spawnBall();
+
+    ctx.clearRect(0,0,width,height);
+    ctx.save();
+    drawStadiumBackground();
+    drawField();
+    drawBat();
+    drawBall();
+    drawFlashAndShake();
+    ctx.restore();
+    updateHUD();
+    requestAnimationFrame(loop);
+  }
+
+  document.getElementById("startBtn").onclick=startGame;
+  document.getElementById("restartBtn").onclick=startGame;
+
+  // Submit Score to Google Sheet
+ submitBtn.onclick = () => {
+  const name = playerName.value.trim();
+  if (!name) {
+    submitMsg.textContent = "Please enter your name first.";
+    return;
+  }
+  submitMsg.textContent = "Submitting ...";
+
+  const payload = { Name: name, Score: bestRoundScore };
+
+  fetch("https://script.google.com/macros/s/AKfycbxtWsTIMugwBJzE1rNtsKwu5HjlEUIhVNUjtKKDXXoQFkSSdV0RjhZimstzxg7gfeqh9w/exec", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+    .then(r => r.json())
+    .then(res => {
+      if (res.ok) {
+        submitMsg.textContent = "✅ Score submitted!";
+      } else {
+        submitMsg.textContent = "⚠️ Submission error.";
+      }
+    })
+    .catch(() => (submitMsg.textContent = "⚠️ Network error."));
+};
+})();
+</script>
+</body>
+</html>
